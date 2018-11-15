@@ -1,0 +1,274 @@
+<script>
+
+var context = new (window.AudioContext || window.webkitAudioContext)();
+
+</script>
+<script>
+// ** (1) Add `Drum` class here **
+// Create a new drum instance
+var Drum = function() {};
+
+// Load the sample for the drum
+// Takes a URL and a callback function
+// Calls callback function when ready
+Drum.prototype.load = function(url, done) {
+    var drum = this; // You might need this for step (3).
+
+    // (1) Make an HTTP request and GET the contents of `url` as audio.
+    // (2) Decode the response as audio.
+    // (3) Store the response under `drum.audio`.
+    // (4) Call `done` to let the drum machine know its ready to be played.
+
+    var xhr = new XMLHttpRequest();
+    xhr.open('GET', url);
+    xhr.responseType = 'arraybuffer';
+    xhr.onload = function() {
+      context.decodeAudioData(xhr.response, function(audio) {
+        drum.audio = audio;
+        done();
+      });
+    };
+    xhr.send();
+};
+
+// Plays the drum's sample
+Drum.prototype.play = function() {
+    // (5) Create a new audio buffer source.
+    // (6) Connect the buffer to the audio output.
+    // (7) Set the buffer to use the given audio.
+    // (8) Play the buffer.
+    var buffer = context.createBufferSource();
+    buffer.connect(context.destination);
+    buffer.buffer = this.audio;
+    buffer.start(0);
+};
+
+// ** (2) Add `Synthesizer` class here **
+
+// Create a new synthesizer instance.
+var Synthesizer = function(options) {
+    this.clock = options.clock;
+    this.staticConfig = options.staticConfig;
+    this.dynamicConfig = options.dynamicConfig;
+    this.createNodes();
+    this.configure();
+    if(this.staticConfig) { this.staticConfig(); }
+    this.connect();
+};
+
+// Create the synthesizer's nodes.
+Synthesizer.prototype.createNodes = function() {
+    this.osc1gain = context.createGain();
+    this.osc2gain = context.createGain();
+    this.filter = context.createBiquadFilter();
+    this.pan = context.createPanner();
+    this.gain = context.createGain();
+};
+
+// Configure the nodes.
+Synthesizer.prototype.configure = function() {
+    this.osc1gain.gain.value = 0.15;
+    this.osc2gain.gain.value = 0.1;
+    this.filter.type = 'lowpass';
+    this.filter.frequency.value = 2000;
+    this.filter.Q.value = 4;
+    this.pan.setPosition(0, 0, 0);
+    this.gain.gain.value = 1;
+};
+
+// Wire up the synthesizer's nodes.
+Synthesizer.prototype.connect = function() {
+    this.osc1gain.connect(this.filter);
+    this.osc2gain.connect(this.filter);
+    this.filter.connect(this.pan);
+    this.pan.connect(this.gain);
+    this.gain.connect(context.destination);
+};
+
+Synthesizer.prototype.play = function(now, freq, duration) {
+    // (1) Create two oscillator nodes.
+    var osc1 = context.createOscillator();
+    var osc2 = context.createOscillator();
+
+    // (2) Create two new gain nodes for the ADSR envelope.
+    //     You may wish to use the names `adsr1gain` and `adsr2gain`.
+    var adsr1gain = context.createGain();
+    var adsr2gain = context.createGain();
+
+    // [given] Create an ADSR envelope.
+    var adsr = new ADSR(this.dynamicConfig);
+
+    // (3) Set both oscillators' type and frequency (`freq`).
+    //     `osc1` should be a square, `osc2` should be a sawtooth.
+    //     _Optional_: detune the second oscillator by five cents.
+    osc1.frequency.value = freq;
+    osc1.type = 'square';
+    osc2.frequency.value = freq;
+    osc2.type = 'sawtooth';
+    osc2.detune.value = 5;
+
+    // (4) Connect the oscillators to the ADSR gain nodes.
+    osc1.connect(adsr1gain);
+    osc2.connect(adsr2gain);
+
+    // [given] Connect the ADSR to the ADSR gain nodes' AudioParam.
+    adsr.connect(adsr1gain.gain);
+    adsr.connect(adsr2gain.gain);
+
+    // (5) Connect the ADSR gain nodes to `this.osc1gain` and `this.osc2gain`.
+    adsr1gain.connect(this.osc1gain);
+    adsr2gain.connect(this.osc2gain);
+
+    // (6) Play the oscillators.
+    //     Specify how long to play the oscillators.
+    osc1.start(now);
+    osc2.start(now);
+    osc1.stop(now + duration);
+    osc2.stop(now + duration);
+
+    // [given] Play the ADSR.
+    adsr.play(now, duration);
+};
+
+</script>
+<script src="clock.js"></script>
+<script src="drum_machine.js"></script>
+<script src="adsr.js"></script>
+<script src="synth_player.js"></script>
+<script src="synth_bank.js"></script>
+<script>
+
+// INITIALIZATION
+
+var clock = new Clock({
+    numBeats: 12,
+    tempo: 90 * 3,
+    // The pattern is is 12/8 time, so there are three parts per beat.
+});
+
+var drumMachine = new DrumMachine({
+    clock: clock,
+    basePath: 'https://s3-us-west-2.amazonaws.com/demo-aud-samp/samples/',
+    instruments: {
+        bass: 'BD_Blofeld_001.wav',
+        snare: 'SD_Blofeld_06.wav',
+        highHat: 'HH_Blofeld_001.wav',
+        clap: 'Clap_Blofeld_2.wav',
+    },
+    pattern: {
+        bass:    'x  x     x x',
+        snare:   '  x   x x   ',
+        highHat: ' xx xxxxx xx',
+        clap:    'x           ',
+    }
+});
+
+//  1 3  6 8 a
+// 0 2 45 7 9 b
+// Major: 024579b
+// Minor: 02357(8a,9b)
+var synthBank = new SynthBank({
+    clock: clock,
+    instruments: [{
+        octave: 5,
+        pattern: [
+            '888   888555', // Minor fourth + 7
+            '555   23 555', // Flat-seventh major + 9
+            '  55554444 0', // Tonic major + 7/11 -> + 7
+            '444444477777', // Tonic major + 7
+        ],
+        staticConfig: function() {
+            this.filter.frequency.value = 2000;
+            this.filter.Q.value = 4;
+        },
+        dynamicConfig: {
+        }
+    }, {
+        octave: 3,
+        pattern: [
+            '558855535555', // Minor fourth + 7
+            'a aaaa222222', // Flat-seventh major + 9
+            '000555444000', // Tonic major + 7/11 -> + 7
+            '000  b000444', // Tonic major + 7
+        ],
+        staticConfig: function() {
+            this.osc1gain.gain.value = 0.1;
+            this.osc2gain.gain.value = 0.3;
+            this.filter.frequency.value = 1000;
+            this.filter.Q.value = 10;
+            this.pan.setPosition(-0.02, 0, 0.1);
+        },
+        dynamicConfig: {
+            attack: 0.03,
+            release: 0.2
+        }
+    }, {
+        octave: 4,
+        pattern: [
+            '555555555555', // Minor fourth + 7
+            'aaaaaaaaaaaa', // Flat-seventh major + 9
+            '000000000000', // Tonic major + 7/11 -> + 7
+            '000000000000', // Tonic major + 7
+        ],
+        staticConfig: function() {
+            this.osc1gain.gain.value = 0.3;
+            this.osc2gain.gain.value = 0.5;
+            this.filter.frequency.value = 1500;
+            this.filter.Q.value = 8;
+            this.pan.setPosition(-1, 0, 0.1);
+            this.gain.gain.value = 0.15;
+        },
+        dynamicConfig: {
+            attack: 0.5,
+            decay: 0.1,
+            sustain: 0.9,
+            release: 0.5
+        }
+    }, {
+        octave: 4,
+        pattern: [
+            '888888888888', // Minor fourth + 7
+            '222222222222', // Flat-seventh major + 9
+            '555555444444', // Tonic major + 7/11 -> + 7
+            '444444444444', // Tonic major + 7
+        ],
+        staticConfig: function() {
+            this.osc1gain.gain.value = 0.3;
+            this.osc2gain.gain.value = 0.5;
+            this.filter.frequency.value = 2000;
+            this.filter.Q.value = 8;
+            this.pan.setPosition(1, 0, 0.1);
+            this.gain.gain.value = 0.15;
+        },
+        dynamicConfig: {
+            attack: 0.5,
+            decay: 0.1,
+            sustain: 0.9,
+            release: 0.5
+        }
+    }, {
+        octave: 4,
+        pattern: [
+            '333333333333', // Minor fourth + 7
+            '000000000000', // Flat-seventh major + 9
+            'bbbbbbbbbbbb', // Tonic major + 7/11 -> + 7
+            'bbbbbbbbbbbb', // Tonic major + 7
+        ],
+        staticConfig: function() {
+            this.osc1gain.gain.value = 0.3;
+            this.osc2gain.gain.value = 0.5;
+            this.filter.frequency.value = 2000;
+            this.filter.Q.value = 8;
+            this.pan.setPosition(0.1, 0, 0.1);
+            this.gain.gain.value = 0.15;
+        },
+        dynamicConfig: {
+            attack: 0.5,
+            decay: 0.1,
+            sustain: 0.9,
+            release: 0.5
+        }
+    }]
+});
+
+</script>

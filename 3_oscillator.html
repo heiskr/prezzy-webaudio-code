@@ -1,0 +1,18 @@
+<script>
+var context = new (window.AudioContext || window.webkitAudioContext)();
+
+var osc = context.createOscillator();
+osc.type = 'triangle';
+osc.frequency.value = 400;
+
+var gain = context.createGain();
+gain.gain.value = 0.1;
+
+osc.connect(gain);
+gain.connect(context.destination);
+
+var now = context.currentTime;
+osc.start(now);
+osc.stop(now + 1);
+
+</script>

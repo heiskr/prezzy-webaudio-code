@@ -1,0 +1,77 @@
+<script>
+
+var context = new (window.AudioContext || window.webkitAudioContext)();
+
+</script>
+<script>
+
+// DRUM CLASS
+
+// Create a new drum instance
+var Drum = function() {};
+
+// Load the sample for the drum
+// Takes a URL and a callback function
+// Calls callback function when ready
+Drum.prototype.load = function(url, done) {
+    var drum = this; // You might need this for step (3).
+
+    // (1) Make an HTTP request and GET the contents of `url` as audio.
+    // (2) Decode the response as audio.
+    // (3) Store the response under `drum.audio`.
+    // (4) Call `done` to let the drum machine know its ready to be played.
+    var xhr = new XMLHttpRequest();
+    xhr.open('GET', url);
+    xhr.responseType = 'arraybuffer';
+    xhr.onload = function() {
+        context.decodeAudioData(xhr.response, function(audio) {
+            drum.audio = audio;
+            done();
+        });
+    };
+    xhr.send();
+};
+
+// Plays the drum's sample
+Drum.prototype.play = function() {
+    // (5) Create a new audio buffer source.
+    // (6) Connect the buffer to the audio output.
+    // (7) Set the buffer to use the given audio.
+    // (8) Play the buffer.
+    var buffer = context.createBufferSource();
+    buffer.connect(context.destination);
+    buffer.buffer = this.audio;
+    buffer.start(0);
+};
+
+</script>
+<script src="clock.js"></script>
+<script src="drum_machine.js"></script>
+<script>
+
+// INITIALIZATION
+
+var clock = new Clock({
+    numBeats: 12,
+    tempo: 90 * 3,
+    // The pattern is is 12/8 time, so there are three parts per beat.
+});
+
+var drumMachine = new DrumMachine({
+    clock: clock,
+    basePath: 'https://s3-us-west-2.amazonaws.com/demo-aud-samp/samples/',
+    instruments: {
+        bass: 'BD_Blofeld_001.wav',
+        snare: 'SD_Blofeld_06.wav',
+        highHat: 'HH_Blofeld_001.wav',
+        clap: 'Clap_Blofeld_2.wav',
+    },
+    pattern: {
+        bass:    'x  x     x x',
+        snare:   '  x   x x   ',
+        highHat: ' xx xxxxx xx',
+        clap:    'x           ',
+    }
+});
+
+</script>
